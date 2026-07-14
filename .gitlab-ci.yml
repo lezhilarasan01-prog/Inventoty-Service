@@ -1,0 +1,64 @@
+# GitLab CI/CD Pipeline for Maven/Spring Boot Microservice
+# This file defines the stages and jobs that run automatically on GitLab CI/CD.
+
+stages:
+  - build
+  - test
+  - package
+  - release
+
+# Cache Maven dependencies across runs to speed up the builds
+cache:
+  key: "${CI_COMMIT_REF_SLUG}"
+  paths:
+    - .m2/repository
+
+variables:
+  # Tell Maven to use the local cache directory we configured above
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+
+# 1. Build Stage: Compiles the source code
+build:
+  stage: build
+  image: maven:3.6.3-jdk-8
+  script:
+    - mvn clean compile
+
+# 2. Test Stage: Runs unit and integration tests
+test:
+  stage: test
+  image: maven:3.6.3-jdk-8
+  script:
+    - mvn test
+
+# 3. Package Stage: Packages the code into a runnable JAR file
+package:
+  stage: package
+  image: maven:3.6.3-jdk-8
+  script:
+    - mvn package -DskipTests
+  artifacts:
+    # Save the generated JAR file as an artifact so it can be downloaded
+    # or passed to subsequent stages
+    paths:
+      - target/*.jar
+    expire_in: 1 week
+
+# 4. Release Stage: Example of building a Docker container image
+# This job runs only when changes are merged into the main branch
+release-docker:
+  stage: release
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  variables:
+    IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+  script:
+    # Log in to GitLab's built-in container registry
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+    # Build the Docker image using a Dockerfile (if present)
+    - docker build -t $IMAGE_TAG .
+    # Push the image to GitLab Container Registry
+    - docker push $IMAGE_TAG
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
